@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    command:  --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    # restart: always
+    # network_mode: host
+    volumes:
+      - ./data/mysql/:/var/lib/mysql/
+      - ./docker-entrypoint-initdb.d/:/docker-entrypoint-initdb.d/
+    environment:
+      TZ: Asia/Shanghai # 指定时区
+      MYSQL_ROOT_PASSWORD: "123456" # 配置root用户密码
+      MYSQL_DATABASE: "cool" # 业务库名
+      MYSQL_USER: "cool" # 业务库用户名
+      MYSQL_PASSWORD: "123123" # 业务库密码
+  redis:
+    image: redis
+    # command: --requirepass "12345678" # redis库密码,不需要密码注释本行
+    restart: always
+    environment:
+      TZ: Asia/Shanghai # 指定时区
+    volumes:
+      - ./data/redis/:/data/
+  dddd-share-server:
+    image: lyy0709/dddd-share-server:dev
+    restart: always
+    ports:
+      - 8300:8001
+    environment:
+      TZ: Asia/Shanghai # 指定时区
+      PROXY_URL: "http://proxy:8080/proxy" # 代理服务地址,支持http和https，socks5，没有则留空默认走本地
+      CHATPROXY: "https://chatproxy.com
+      # 内容审核及速率限制
+      # AUDIT_LIMIT_URL: "http://auditlimit:8080/audit_limit"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data/dddd-share-server/:/app/data/
+      - ./list.js:/app/resource/public/list.js
+      - /proc:/host/proc:ro    # 挂载宿主机的 /proc 目录，只读
+      - /sys:/host/sys:ro      # 挂载宿主机的 /sys 目录，只读
