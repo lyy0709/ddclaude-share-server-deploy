@@ -40,16 +40,16 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 
 - 授权联系
 
-![微信二维码](images/wechat.jpg)
+![微信二维码](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/wechat.jpg)
 
 ## 示例图片
 
 - list 选车前端
 
-![list](images/list.png)
+![list](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/list.png)
 
 - admin 管理后台
 
-![admin](images/admin.png)
+![admin](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/admin.png)
 
 
