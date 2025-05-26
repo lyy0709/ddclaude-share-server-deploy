@@ -25,6 +25,40 @@ cd ddclaude-share-server-deploy
 chmod +x deploy.sh
 ./deploy.sh
 ```
+## 限速服务以及对话审核
+
+参考项目[https://github.com/lyy0709/auditlimit](https://github.com/lyy0709/auditlimit)
+
+## oauth第三方对接
+
+配置环境变量
+
+```yml
+OAUTH_URL: https://xxxxx.xxx.com/oauth
+```
+
+当该值被配置后，用户登陆时将向该地址 POST 以下数据
+
+```
+userToken: 用户Token
+carid: 用户选择的账号
+```
+
+允许用户登陆接口应返回 json 数据
+
+```json
+{
+  "code": 1,
+  "msg": "登陆成功时的提示信息",
+  "expireTime": "2023-05-09 12:00:00",
+}
+```
+
+其中 code 为 1 时表示允许登陆，其他值表示不允许登陆
+
+msg 为登陆成功/失败时的提示信息
+
+expireTime为用户剩余时间
 
 ## 授权相关
 
@@ -40,7 +74,7 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 
 - 授权联系
 
-![微信二维码](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/wechat.jpg)
+![微信二维码](https://raw.githubusercontent.com/lyy0709/lyy0709/refs/heads/main/img/IMG_8139.jpeg)
 
 ## 示例图片
 
