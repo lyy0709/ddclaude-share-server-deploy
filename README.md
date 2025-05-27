@@ -26,6 +26,9 @@ cd ddclaude-share-server-deploy
 chmod +x deploy.sh
 ./deploy.sh
 ```
+
+- 如果出现 ip 被墙,可以尝试使用`docker-compose-warp.yml`中含有 warp 的配置
+
 ## 限速服务以及对话审核
 
 参考项目[https://github.com/lyy0709/auditlimit](https://github.com/lyy0709/auditlimit)
