@@ -3,10 +3,10 @@ set -e
 
 ## 克隆仓库到本地
 echo "clone repository..."
-git clone https://github.com/dddd-dddd-dddd/dddd-deploy.git dddd-deploy
+git clone https://github.com/lyy0709/ddclaude-share-server-deploy.git ddclaude-share-server-deploy
 
 ## 进入目录
-cd dddd-deploy
+cd ddclaude-share-server-deploy
 
 docker compose pull
 docker compose up -d --remove-orphans
