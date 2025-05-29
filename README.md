@@ -14,7 +14,7 @@
 **务必**前往`docker-compose.yml`文件修改相关配置
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/lyy0709/ddclaude-share-server-deploy/refs/heads/main/quick-install.sh -o quick-install.sh
+curl -sSfL https://raw.githubusercontent.com/lyy0709/ddclaude-share-sever-deploy/refs/heads/main/quick-install.sh -o quick-install.sh
 chmod +x quick-install.sh
 ./quick-install.sh
 ```
