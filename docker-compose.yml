@@ -26,11 +26,11 @@ services:
     image: lyy0709/dddd-share-server:dev
     restart: always
     ports:
-      - 8300:8001
+      - 8400:8001
     environment:
       TZ: Asia/Shanghai # 指定时区
-      PROXY_URL: "http://proxy:8080/proxy" # 代理服务地址,支持http和https，socks5，没有则留空默认走本地
-      CHATPROXY: "https://chatproxy.com
+      # PROXY_URL: "http://proxy:8080/proxy" # 代理服务地址,支持http和https，socks5，没有则留空默认走本地
+      # CHATPROXY: "https://chatproxy.com" #网关地址
       # 内容审核及速率限制
       # AUDIT_LIMIT_URL: "http://auditlimit:8080/audit_limit"
     volumes:
