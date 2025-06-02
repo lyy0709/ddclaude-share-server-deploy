@@ -30,6 +30,12 @@ chmod +x deploy.sh
 
 - 如果出现 ip 被墙,可以尝试使用`docker-compose-warp.yml`中含有 warp 的配置
 
+## 代理配置
+
+- 进入后台填写对每个代理相关信息
+- 支持 https,http,socks 代理,有无密码均可,如使用 warp 可填写socks5://warp:1080
+- 留空则默认走本地,填入代理默认使用代理,如配置网关则最优先使用网关,如果您的网关需要白名单,则请不要填写代理,同时填写代理与网关默认为使用代理请求网关
+
 ## 限速服务以及对话审核
 
 参考项目[https://github.com/lyy0709/auditlimit](https://github.com/lyy0709/auditlimit)

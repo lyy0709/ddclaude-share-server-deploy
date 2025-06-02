@@ -35,14 +35,13 @@ services:
       - 8300:8001
     environment:
       TZ: Asia/Shanghai # 指定时区
-      PROXY_URL: "socks5://warp:1080" # 代理服务地址,支持http和https，socks5，没有则留空默认走本地
       # CHATPROXY: "https://chatproxy.com
       # 内容审核及速率限制
       # AUDIT_LIMIT_URL: "http://auditlimit:8080/audit_limit"
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./data/ddclaude-share-server-server/:/app/data/
-      - ./list.js:/app/resource/public/list.js
+      # - ./list.js:/app/resource/public/list.js
       - /proc:/host/proc:ro    # 挂载宿主机的 /proc 目录，只读
       - /sys:/host/sys:ro      # 挂载宿主机的 /sys 目录，只读
     depends_on:
