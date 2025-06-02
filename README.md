@@ -73,6 +73,8 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 ```
 中的 hardware_id.txt 中复制出硬件 id 发送给我进行授权
 
+- 如之前部署过dddd-deploy，可在compose中增加挂载两个只读目录，具体参考本项目，重新启动厚会在相应目录生成硬件码
+
 - 授权费用 
 
 # 75 元/月
