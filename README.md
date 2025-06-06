@@ -88,7 +88,8 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 
 - 授权费用 
 
-# 75 元/月
+# 75元/月授权（无指导）
+# 75元/月授权+500元（含指导+代部署）
 
 - 授权联系
 
