@@ -5,6 +5,8 @@
 - 本项目支持对话本地化保存
 
 ## 更新日志
+- 20251004 修复了部分文件上传异常的问题
+- 20251003 重写了一些页面的刷新逻辑，修复了提示无法正常显示的问题，停运增加了模型显示
 - 20250904 修复project 创建问题，，增加了 project 的删除，修复某些接口
 - 20250825 更新project接口，适配新接口
 - 20250704 支持project，存在bug，project中上传图片问题
@@ -107,6 +109,7 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 - admin 管理后台
 
 ![admin](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/admin.png)
+
 
 
 
