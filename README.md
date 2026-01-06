@@ -5,6 +5,7 @@
 - 本项目支持对话本地化保存
 
 ## 更新日志
+- 20260106 更新，增加账号删除或者封号的页面读取，增加参数CONV_FULL_REDIRECT，默认为 false，设置为 true 后会移除对话列表里存在的账号封号或者删除的号
 - 20251124 更新内容储存，使用gzip保证能存储更大的内容，更新mysql配置(如果出现丢失对话的情况请更新 compose 配置）
 - 20251118 更新屏蔽支付接口，更新一些claude接口
 - 20251004 修复了部分文件上传异常的问题
@@ -111,6 +112,7 @@ ddclaude-share-server-deploy/data/ddclaude-share-server-server/
 - admin 管理后台
 
 ![admin](https://github.com/lyy0709/ddclaude-share-sever-deploy/blob/main/images/admin.png)
+
 
 
 
