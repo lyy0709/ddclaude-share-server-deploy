@@ -20,6 +20,8 @@ redis:
 
 cool:
   autoMigrate: true
+  # ⚠️ eps 会通过 /admin/base/open/eps 免登录暴露各表结构（字段名/类型/注释）。
+  # 属信息泄露面；若前端 admin 无需在线拉取 eps，生产可改为 false。
   eps: true
   file:
     mode: "local"
