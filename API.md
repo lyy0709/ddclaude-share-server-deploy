@@ -303,5 +303,4 @@ carid:     用户选择/分配的账号
 | `LICENSE_CODE` | 授权码 | 必填 |
 | `SESSION_MAX_AGE` | 会话有效期（小时） | 默认 720 |
 | `PROHIBIT_MULTIPLE_LOGIN` | 禁止同一 token 多处登录 | 默认 false |
-| `RECORD_CONVERSATION` | 记录对话 | 默认 false |
 | `TRUST_PROXY_HEADERS` | 信任 `CF-Connecting-IP`/`X-Forwarded-For` 等取真实 IP | 反代后为 true（默认），直连公网应设 false |
