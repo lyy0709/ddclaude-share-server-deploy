@@ -1,306 +1,195 @@
-# ddclaude-share-server 外部系统安全对接 API 文档
+# ddclaude-share-server 部署与外部系统 API
 
-> 面向对接方（账号管理系统、用户系统、审计系统）的接口规范。
->
-> **核心原则：账号凭证（sessionkey）经安全处理后存储，不以明文保存。任何写入账号的操作都必须走本文档中的接口，切勿直接读写数据库。**
+本文只记录部署、运维和外部系统对接需要使用的稳定接口。以下内容不属于本文范围：
 
----
+- Web 管理后台 `/admin/*`；
+- Claude Web 用户侧代理 `/api/*`；
+- Project、对话记录等本地数据表及其内部同步逻辑。
 
-## 目录
+账号凭据必须通过管理 API 或 Web 管理后台写入。不要直接修改数据库中的账号凭据，也不要在日志、工单或代码仓库中记录凭据明文。
 
-- [一、鉴权分层](#一鉴权分层)
-- [二、adminapi 鉴权](#二adminapi-鉴权)
-- [三、账号管理接口 /adminapi/claude/session](#三账号管理接口-adminapiclaudesession)
-- [四、其它管理接口](#四其它管理接口)
-- [五、用户登录 / 查询接口](#五用户登录--查询接口)
-- [六、出站 Webhook（由外部系统实现）](#六出站-webhook由外部系统实现)
-- [七、OAuth 第三方登录对接](#七oauth-第三方登录对接)
-- [八、代理接口 /api/*（用户侧，说明）](#八代理接口-api用户侧说明)
-- [九、外部系统安全对接规范（务必阅读）](#九外部系统安全对接规范务必阅读)
-- [十、相关环境变量](#十相关环境变量)
+## 一、基础约定
 
----
+示例服务地址为 `https://your-domain.example`，请求和响应默认使用 JSON。
 
-## 一、鉴权分层
+### 管理 API 鉴权
 
-| 通道 | 路径前缀 | 鉴权方式 | 用途 |
-|---|---|---|---|
-| **管理 API** | `/adminapi/*` | `apiauth` 请求头（共享密钥） | **外部系统对接账号/用户/代理管理，本文档重点** |
-| Web 管理后台 | `/admin/*` | 管理员登录态 | 人工登录的管理后台 |
-| 用户侧 | `/api/*`、`/oauth`、`/logintoken` 等 | 登录后的 Session Cookie | 终端用户使用 |
+所有 `/adminapi/*` 请求必须携带：
 
-**凭证存储说明：**
-- 账号 `officialSession`（Claude sessionkey）经安全处理后存储，**数据库中不保留明文**。
-- 因此**直接对数据库写入 sessionkey 是无效的**：要么写入失败，要么产生一份不被系统使用的无效数据。
-- **请一律通过下面的接口写入 / 变更账号，系统会自动完成安全存储。**
-
----
-
-## 二、adminapi 鉴权
-
-所有 `/adminapi/*` 请求必须携带请求头：
-
-```
-apiauth: <APIAUTH 环境变量的值>
+```http
+apiauth: <APIAUTH>
 ```
 
-- 若服务端 `APIAUTH` 未配置 → 所有 `/adminapi/*` 返回 **403 Forbidden**（fail‑closed）。
+`APIAUTH` 未配置、未携带或不匹配时，服务返回 HTTP `403` 和文本 `forbidden`。部署时应使用至少 32 位随机值，并通过内网、反向代理访问控制或 IP 白名单限制 `/adminapi/*`。
 
-> ⚠️ **安全要求**：`APIAUTH` 必须使用**高强度随机值（≥32 位）**，切勿使用用户名、域名等可猜测的弱值；并强烈建议 `/adminapi/*` **仅对内网 / IP 白名单开放**，不要直接暴露到公网。
-
-**通用响应包裹（Cool Admin 风格）：**
+管理 API 的常规成功响应格式为（部分操作不返回 `data`）：
 
 ```json
-{ "code": 1000, "message": "success", "data": { ... } }
+{"code":1000,"message":"success","data":{}}
 ```
 
-- `code = 1000` 表示成功；其它值表示失败，`message` 为原因。
+`code=1000` 表示成功；其它值应按失败处理并记录 `message`，但不得记录请求中的密码、Session Key 或用户 Token。
 
----
+## 二、管理 API
 
-## 三、账号管理接口 /adminapi/claude/session
+### 通用操作
 
-### 3.0 通用 CRUD 约定
+下列模块支持相同的 CRUD 路径：
 
-| 操作 | 方法 & 路径 | 请求体 | 返回 `data` |
-|---|---|---|---|
-| 分页 | `POST /adminapi/claude/session/page` | `{"page":1,"size":20}`（可加 `keyWord`、精确字段过滤） | `{"list":[...],"pagination":{"page","size","total"}}` |
-| 列表 | `POST /adminapi/claude/session/list` | `{}`（可加过滤） | `[ ... ]` |
-| 详情 | `GET  /adminapi/claude/session/info?id=51` | — | `{ ... }` |
-| 新增 | `POST /adminapi/claude/session/add` | 见 3.1 | `{"id":51}` |
-| 修改 | `POST /adminapi/claude/session/update` | 见 3.3 | — |
-| 删除 | `POST /adminapi/claude/session/delete` | `{"ids":[51,52]}` | — |
+| 模块 | 路径前缀 | 用途 |
+| --- | --- | --- |
+| Claude 账号 | `/adminapi/claude/session` | 添加、查询和维护共享账号 |
+| 平台用户 | `/adminapi/claude/user` | 添加、查询和维护登录 Token |
+| 代理池 | `/adminapi/claude/proxypool` | 添加、查询和维护代理 |
 
-> 排序参数：`order`=字段名、`sort`=`asc`/`desc`，仅用于 page/list 查询；写接口 body 里的 `sort` 是账号排序序号（整数），二者互不冲突。
+| 操作 | 方法与路径 | 最小请求 |
+| --- | --- | --- |
+| 分页 | `POST {prefix}/page` | `{"page":1,"size":20}` |
+| 列表 | `POST {prefix}/list` | `{}` |
+| 详情 | `GET {prefix}/info?id=<ID>` | 无请求体 |
+| 新增 | `POST {prefix}/add` | 见对应模块 |
+| 修改 | `POST {prefix}/update` | 必须包含 `id` |
+| 删除 | `POST {prefix}/delete` | `{"ids":[<ID>]}` |
 
-### 3.1 新增账号 `add`
+分页和列表可按需传入过滤条件；调用方不应依赖未在本文列出的内部字段。
 
-```
+### 添加 Claude 账号
+
+```http
 POST /adminapi/claude/session/add
-apiauth: <KEY>
+Content-Type: application/json
+apiauth: <APIAUTH>
+```
+
+```json
+{
+  "email": "<ACCOUNT_EMAIL>",
+  "password": "<ACCOUNT_PASSWORD>",
+  "carID": "<UNIQUE_ACCOUNT_ID>",
+  "officialSession": "<CLAUDE_SESSION_KEY>",
+  "proxyURL": ""
+}
+```
+
+`email`、`password`、`carID` 和 `officialSession` 必填；`email` 与 `carID` 必须唯一。`proxyURL` 可省略：为空时账号直连，并可参与代理池自动分配；填写具体代理后以手工值为准。
+
+新增后账号会异步校验，调用方可通过 `info`、`list` 或 `page` 查看 `status` 和 `hasCredential`。查询响应不会返回密码或 Session Key。
+
+### 修改、删除与轮换凭据
+
+普通修改示例：
+
+```json
+{"id":51,"remark":"<REMARK>","proxyURL":"<PROXY_URL>","sort":1,"status":true}
+```
+
+`update` 不接受 `password` 或 `officialSession`。轮换已有账号的 Session Key 必须使用：
+
+```http
+POST /adminapi/claude/session/rotateCredential
+Content-Type: application/json
+apiauth: <APIAUTH>
+```
+
+```json
+{"id":51,"officialSession":"<NEW_CLAUDE_SESSION_KEY>"}
+```
+
+成功返回 `code=1000`。删除账号使用通用 `delete` 路径。
+
+### 平台用户与代理池
+
+平台用户新增至少需要 `userToken` 和 `expireTime`，常用可选字段为 `isPro`、`remark`。默认情况下 `userToken` 必须唯一。
+
+代理池新增至少需要唯一的 `proxyURL`，可选字段为 `status`、`remark`。支持的 URL 形式包括 `http://`、`https://`、`socks5://` 和 `socks5h://`；代理分配和手工覆盖规则见 [README.md](./README.md#代理配置)。
+
+## 三、用户接入接口
+
+这些接口用于登录页或外部用户系统，不使用 `apiauth`。必须通过 HTTPS 提供服务，并按用户 Token 的敏感程度保护访问日志。
+
+| 接口 | 参数 | 用途 |
+| --- | --- | --- |
+| `GET` 或 `POST /userinfo` | `usertoken` | 查询本地用户状态和到期时间 |
+| `POST /oauth` | `usertoken`，可选 `carid` | 使用本地用户表校验登录；未指定账号时自动选择 |
+| `GET` 或 `POST /logintoken` | `usertoken`，可选 `carid`、`resptype` | 建立浏览器会话；默认跳转到 `/new` |
+
+`/userinfo` 成功时返回 `code=1`，`data` 包含 `expireTime`、`isExpired`、`remainingSeconds`、`isPro` 和 `remark`。空值或过长 Token 返回 HTTP `400`；超过单 IP 30 次/分钟或单 Token 60 次/分钟时返回 HTTP `429`，并携带 `Retry-After: 60`。
+
+`/oauth` 成功时返回 `code=1`，以及 `carid`、`expireTime` 和 `isPro`；业务失败通常返回 HTTP `200` 且 `code=0`。
+
+`/logintoken` 默认在成功后写入登录 Session 并返回 HTTP `302`。服务端对接可传 `resptype=json`，成功时返回 `{"code":1,"msg":"登录成功"}`。浏览器直登链接中的 Token 可能进入代理访问日志，应限制日志访问并设置合理的保留期。
+
+## 四、可选外部回调
+
+### 第三方登录 `OAUTH_URL`
+
+设置 `OAUTH_URL` 后，登录流程会向该地址发送表单 `POST`：
+
+```text
+usertoken=<USER_TOKEN>
+carid=<ACCOUNT_ID>
+```
+
+允许登录时返回：
+
+```json
+{"code":1,"msg":"登录成功","expireTime":"<EXPIRY_TIME>"}
+```
+
+`code` 不为 `1` 时拒绝登录。外部系统也可以在响应中返回 `usertoken` 或 `carid` 以替换原值。登录请求会等待该接口返回，因此该端点应低延迟且高可用。
+
+### 对话前审核 `AUDIT_LIMIT_URL`
+
+设置后，服务会在对话请求发往上游前同步 `POST` 经敏感字段清理的聊天请求 JSON。请求包含以下头：
+
+```http
+Authorization: Bearer <USER_TOKEN>
+Carid: <ACCOUNT_ID>
 Content-Type: application/json
 ```
 
-```json
-{
-  "email": "user@example.com",
-  "password": "account-password",
-  "carID": "a1b2c3d4",
-  "officialSession": "sk-ant-sid01-....",
-  "proxyURL": "socks5://user:pass@host:port",
-  "sort": 0,
-  "remark": "备注"
-}
-```
+请求还可能携带原请求的 `Referer` 和 `User-Agent`。只有 HTTP `200` 会放行；接收端返回其它状态码时，其状态码和响应体会返回给用户；连接失败时本次对话返回 HTTP `400`。部署时应为该端点设置独立的可用性监控。
 
-| 字段 | 必填 | 说明 |
-|---|---|---|
-| `email` | ✅ | 账号邮箱（唯一） |
-| `password` | ✅ | 账号密码 |
-| `carID` | ✅ | 展示 ID / 车号（唯一） |
-| `officialSession` | ✅ | Claude sessionkey（`sk-ant-` 开头）；提交后由系统安全存储 |
-| `proxyURL` | | 代理，支持 `http(s)://`、`socks5://`，可带账号密码 |
-| `sort` | | 排序序号 |
-| `remark` | | 备注 |
+### 对话完成通知 `CON_NOTIFY_URL`
 
-- 返回 `{"code":1000,"data":{"id":51}}`。
-- 新增后会**异步校验账号可用性**（登录 Claude），成功后 `status` 置为可用。
-
-### 3.2 查询 `page` / `list` / `info`
-
-响应中的账号对象**不包含 `officialSession` 和 `password`**，改为状态字段：
+设置后，服务会在对话完成后异步 `POST`：
 
 ```json
 {
-  "id": 51, "carID": "a1b2c3d4", "email": "user@example.com",
-  "status": 1, "isPro": 0, "sort": 0, "count": 12,
-  "organizationsid": "xxxx", "planType": "chat",
-  "proxyURL": "", "proxySource": "direct", "remark": "",
-  "hasCredential": 1,
-  "createTime": "2026-05-06 12:24:25", "updateTime": "2026-07-17 21:05:52"
+  "uuid": "<CONVERSATION_ID>",
+  "model": "<MODEL>",
+  "request": "<USER_REQUEST>",
+  "response": "<MODEL_RESPONSE>"
 }
 ```
 
-- `hasCredential=1` 表示该账号已配置凭证（`0` 表示尚未配置/无效）。
+`response` 是模型返回的 SSE 流文本；`request` 和 `response` 各自最多 4 MiB，超出部分会截断。请求头与审核回调一致，超时为 30 秒；服务不根据接收端 HTTP 状态重试，连接错误只写入服务端日志，不影响已完成的对话。
 
-### 3.3 修改账号 `update`
+## 五、相关配置
 
-```json
-{ "id": 51, "remark": "新备注", "proxyURL": "...", "sort": 1, "status": 1 }
-```
+常用部署参数见 [README.md](./README.md#常用部署参数)。与本文接口直接相关的配置如下：
 
-> ⚠️ **`update` 不允许修改 `officialSession` / `password`**，携带这两个字段会返回错误「敏感凭据只能通过专用轮换接口修改」。变更 sessionkey 请用 3.5。
+| 变量 | 默认行为 | 作用 |
+| --- | --- | --- |
+| `PORT` | `8001` | 容器内 HTTP 监听端口 |
+| `APIAUTH` | 空；拒绝所有 `/adminapi/*` | 管理 API 共享密钥 |
+| `OAUTH_URL` | `http://127.0.0.1:<PORT>/oauth` | 第三方登录校验地址 |
+| `AUDIT_LIMIT_URL` | 空；关闭 | 对话前同步审核地址 |
+| `CON_NOTIFY_URL` | 空；关闭 | 对话完成异步通知地址 |
+| `SESSION_MAX_AGE` | `720` | 登录 Session 有效期，单位小时 |
+| `PROHIBIT_MULTIPLE_LOGIN` | `false` | 是否禁止同一 Token 多处登录 |
+| `ALLOW_DUPLICATE_USER_TOKEN` | `false` | 是否允许重复用户 Token |
+| `TRUST_PROXY_HEADERS` | `true` | 是否信任反向代理提供的客户端 IP；服务直连公网时应设为 `false` |
 
-### 3.4 删除账号 `delete`
+修改环境变量后需要重新创建服务容器。
 
-```json
-{ "ids": [51, 52] }
-```
+## 六、常见错误
 
-### 3.5 变更 sessionkey（凭证轮换）`rotateCredential`
-
-```
-POST /adminapi/claude/session/rotateCredential
-apiauth: <KEY>
-```
-
-```json
-{ "id": 51, "officialSession": "sk-ant-sid01-新的sessionkey" }
-```
-
-- 成功 `{"code":1000,"message":"凭据已轮换"}`；失败 `{"code":1001,"message":"凭据轮换失败"}`。
-- **这是变更已有账号 sessionkey 的唯一入口**，系统会自动完成安全存储并覆盖旧值。
-
-### 3.6 批量导入（仅 Web 后台）
-
-```
-POST /admin/claude/session/batchImport   （注意：/admin，需管理员登录，不在 /adminapi 下）
-```
-
-```json
-{ "text": "user@example.com----password123----sk-ant-xxx----socks5://host:port\n..." }
-```
-
-- 每行 `邮箱----密码----sessionkey----代理URL(可选)`；导入后逐个异步校验。
-- 外部系统如需批量开户，建议循环调用 3.1 的 `add`。
-
----
-
-## 四、其它管理接口
-
-均为 `/adminapi/claude/{模块}` 下的标准 CRUD（`page`/`list`/`info`/`add`/`update`/`delete`），鉴权同第二节。
-
-| 模块 | 前缀 | 说明 |
-|---|---|---|
-| 用户 | `/adminapi/claude/user` | 平台用户（`userToken`、`expireTime`、`isPro`、`remark`、`count`） |
-| 对话 | `/adminapi/claude/conversations` | 本地保存的对话记录 |
-| 项目 | `/adminapi/claude/projects` | Project 记录 |
-| 代理池 | `/adminapi/claude/proxypool` | 代理池条目 |
-
----
-
-## 五、用户登录 / 查询接口
-
-### 5.1 查询用户信息 `GET|POST /userinfo`
-
-```
-GET /userinfo?usertoken=<用户Token>
-```
-
-响应：
-
-```json
-{
-  "code": 1, "msg": "查询成功",
-  "data": {
-    "userToken": "xxxx", "expireTime": "2026-07-22 11:03:17",
-    "isExpired": false, "remainingSeconds": 431999,
-    "isPro": true, "remark": ""
-  }
-}
-```
-
-- `code=1` 成功；`code=0` 且 `msg="用户不存在"` 表示无此 token。
-- **限流**：单 IP 30 次/分钟、单 token 60 次/分钟，超限返回 `429` 并带 `Retry-After` 头。
-
-### 5.2 登录 `POST /oauth` / `POST /oauthfree`
-
-- `POST /oauth`：参数 `usertoken`、`carid`（可空，自动分配可用账号）。校验用户有效期与 Pro 类型后返回可用的 `carid`。
-- 返回：`{"code":1,"msg":"登陆成功","carid":"a1b2c3d4","expireTime":"...","isPro":true}`。
-
-### 5.3 令牌直登 `ALL /logintoken`
-
-```
-/logintoken?usertoken=<用户Token>[&carid=<账号>]
-```
-
-- 校验 `usertoken`，无 `carid` 时自动挑选使用次数最少的可用账号，写入会话后 302 跳转到 `/new`。用于「一个链接直接登录」场景。
-
----
-
-## 六、出站 Webhook（由外部系统实现）
-
-以下是本服务**主动 POST 到外部系统**的回调；对接方需实现对应 HTTP 端点并配置环境变量。两者都携带 `Authorization: Bearer <usertoken>`、`Carid: <carid>` 头。
-
-### 6.1 审计 / 限流回调 `AUDIT_LIMIT_URL`
-
-- 触发：用户发起对话补全（completion）**之前**，**同步**调用。
-- 方法：`POST`，Body 为聊天请求体。
-- **返回 `200` → 放行**；返回**非 `200` → 拦截**，其响应体会原样回传给用户（用于「额度不足 / 触发风控」等提示）。
-- 参考实现：<https://github.com/lyy0709/auditlimit>
-
-### 6.2 对话通知回调 `CON_NOTIFY_URL`
-
-- 触发：对话补全**完成后**，**异步**调用（不阻塞用户，30s 超时）。
-- 方法：`POST`，Body：
-
-```json
-{
-  "uuid": "对话UUID",
-  "model": "claude-sonnet-4-5-20250929",
-  "request": "用户请求内容(超长截断)",
-  "response": "模型完整回复(超长截断)"
-}
-```
-
-- 用于外部系统留存 / 审计对话内容。返回值不影响主流程。
-
----
-
-## 七、OAuth 第三方登录对接
-
-配置环境变量后启用（用户系统由第三方托管）：
-
-```yaml
-OAUTH_URL: "https://your-user-system.com/oauth"
-```
-
-配置后，用户登录时本服务会向该地址 `POST`：
-
-```
-userToken: 用户Token
-carid:     用户选择/分配的账号
-```
-
-第三方应返回：
-
-```json
-{ "code": 1, "msg": "登陆成功", "expireTime": "2026-05-09 12:00:00" }
-```
-
-- `code=1` 允许登录，其它值拒绝；`expireTime` 为该用户剩余有效期。
-
----
-
-## 八、代理接口 /api/*（用户侧，说明）
-
-`/api/organizations/:orgid/*` 等是转发到 Claude 官方的**代理接口**，由前端在**用户登录会话**下调用，需 Session Cookie，不面向外部系统对接，故此处不展开。要点：
-
-- 统一经登录态校验；
-- 响应头统一剥离 `Set-Cookie`，sessionkey 只注入到发往上游的请求、绝不回传浏览器；
-- `/v1/messages` 被全局拦截（禁止把共享账号当裸 API Key 刷额度）。
-
----
-
-## 九、外部系统安全对接规范（务必阅读）
-
-1. **只经接口写账号，禁止直接写库。** 写 sessionkey 必须用 `add`（3.1）或 `rotateCredential`（3.5）。直接写数据库无效（明文列已移除），会产生不可用的脏数据。
-2. **`APIAUTH` 用强随机值**，`/adminapi/*` 仅内网 / IP 白名单开放，切勿公网裸奔。
-3. **凭证不会经任何响应返回**：`page/list/info` 只返回 `hasCredential` 等状态字段，不返回 `officialSession`/`password`。
-4. **变更 sessionkey 只能走 `rotateCredential`**，`update` 携带凭证会被拒绝。
-5. **做好数据库与部署卷的备份隔离与访问控制**，仅授权最小必要人员访问。
-
----
-
-## 十、相关环境变量
-
-| 变量 | 说明 | 建议 |
-|---|---|---|
-| `APIAUTH` | `/adminapi/*` 的共享密钥 | **必填且用强随机值**，否则 adminapi 全拒 |
-| `OAUTH_URL` | 第三方用户系统登录回调 | 见第七节 |
-| `AUDIT_LIMIT_URL` | 审计/限流回调（出站，同步） | 见 6.1 |
-| `CON_NOTIFY_URL` | 对话通知回调（出站，异步） | 见 6.2 |
-| `LICENSE_CODE` | 授权码 | 必填 |
-| `SESSION_MAX_AGE` | 会话有效期（小时） | 默认 720 |
-| `PROHIBIT_MULTIPLE_LOGIN` | 禁止同一 token 多处登录 | 默认 false |
-| `TRUST_PROXY_HEADERS` | 信任 `CF-Connecting-IP`/`X-Forwarded-For` 等取真实 IP | 反代后为 true（默认），直连公网应设 false |
+| 现象 | 检查项 |
+| --- | --- |
+| `/adminapi/*` 返回 `403 forbidden` | `APIAUTH` 是否在服务端配置，调用值是否完全一致 |
+| HTTP `200` 但 `code` 表示失败 | 检查 `message`/`msg` 和必填字段；不要只判断 HTTP 状态 |
+| `/userinfo` 返回 `429` | 按 `Retry-After` 等待，并检查反向代理真实 IP 配置 |
+| 登录失败或超时 | 检查 `OAUTH_URL` 连通性、响应 JSON、`expireTime` 和可用账号 |
+| 对话在发送前被拒绝 | 检查 `AUDIT_LIMIT_URL` 的状态码、响应体和可用性 |
+| 通知未到达 | 检查 `CON_NOTIFY_URL`、服务日志及接收端 30 秒内响应情况 |

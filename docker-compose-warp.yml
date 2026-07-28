@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   mysql:
     image: mysql:8.0
@@ -39,9 +38,27 @@ services:
       - 8300:8001
     environment:
       TZ: Asia/Shanghai # 指定时区
-      # CHATPROXY: "https://chatproxy.com
-      # 内容审核及速率限制
-      # AUDIT_LIMIT_URL: "http://auditlimit:8080/audit_limit"
+      # Claude Web 网关地址；配置后代理池自动分配会跳过
+      # CHATPROXY: "https://chatproxy.com"
+      # 第三方用户系统登录回调
+      # OAUTH_URL: "https://your-user-system.com/oauth"
+      # 登录会话有效期（小时）
+      # SESSION_MAX_AGE: "720"
+      # PROHIBIT_MULTIPLE_LOGIN: "false"
+      # ALLOW_DUPLICATE_USER_TOKEN: "false"
+      # 直连公网时建议设为 false；经 Cloudflare/Nginx 等可信反代时保持 true
+      # TRUST_PROXY_HEADERS: "true"
+      # 内容审核 / 限流回调（出站，同步，详见 API.md）
+      # AUDIT_LIMIT_URL: "http://auditlimit:8080/claude/audit_limit"
+      # 对话内容通知回调（出站，异步，详见 API.md）
+      # CON_NOTIFY_URL: "http://your-notify-endpoint"
+      # 外部系统对接 /adminapi 管理接口的密钥；必须使用 32 位以上强随机值
+      # APIAUTH: "CHANGE_ME_TO_A_STRONG_RANDOM_KEY"
+      # Claude Web Skills 默认返回空列表；确认共享账号内容可见后再开启只读透传
+      # CLAUDE_WEB_SKILLS_READ_THROUGH: "false"
+      # Claude Web MCP 默认只开放已知只读接口；仅确认需要写操作后再开启
+      # CLAUDE_WEB_MCP_MUTATIONS: "false"
+      LICENSE_CODE: "" # 授权码
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./data/ddclaude-share-server-server/:/app/data/
