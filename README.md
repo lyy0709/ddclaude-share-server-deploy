@@ -98,7 +98,7 @@ docker compose -f docker-compose-warp.yml logs --tail=200 ddclaude-share-server-
 | `PROHIBIT_MULTIPLE_LOGIN` | `false` | 是否禁止同一用户 token 多处同时登录 |
 | `ALLOW_DUPLICATE_USER_TOKEN` | `false` | 是否允许多条用户记录使用相同 token |
 | `TRUST_PROXY_HEADERS` | `true` | 是否信任可信反代传入的真实客户端 IP；服务直连公网时建议设为 `false` |
-| `CLAUDE_WEB_SKILLS_READ_THROUGH` | `false` | 是否只读透传 Claude Web Skills 列表；默认返回空数组 |
+| `CLAUDE_WEB_SKILLS_READ_THROUGH` | `false` | 是否只读透传 Claude Web Skills 列表；默认返回 `{"skills":[]}` |
 | `CLAUDE_WEB_MCP_MUTATIONS` | `false` | 是否允许 Claude Web MCP 写操作；默认只开放已知只读接口 |
 
 ## 限速服务以及对话审核
