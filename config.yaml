@@ -1,3 +1,6 @@
+server:
+  clientMaxBodySize: 104857600 # 100 MiB，与新版服务默认配置一致
+
 database:
   default: # 数据源名称,当不指定数据源时 default 为默认数据源
     type: "mysql" # 数据库类型
@@ -39,4 +42,4 @@ modules:
       authority:
         enable: 1
       log:
-        enable: 1
+        enable: 0 # 使用项目内置脱敏日志中间件

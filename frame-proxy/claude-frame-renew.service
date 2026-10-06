@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew Claude Frame proxy TLS certificate
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/claude-frame-proxy/renew.sh
+UMask=0077

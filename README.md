@@ -5,6 +5,8 @@
 - 本项目支持对话本地化保存
 
 ## 更新日志
+- 20261006 Artifact 预览、单文件/批量下载和附件按本站用户拥有的对话定位原 Claude 账号实时读取，取消文件内容缓存与聊天正文重建，保留原生卡片及预览面板；同一本站用户切换账号后可只读查看自己的历史，写操作仍要求原账号。修复 Office 转换二进制被误当成模型 JSON 的问题，并更新静态资源 URL 版本以刷新旧脚本。新增独立 Claude Docs Frame 代理，默认域名 `frame.chatgpt.ng`，详见下方部署说明。原账号失效或上游文件消失时提示原因，已有聊天记录仍可查看。完整线上页面验收仍需主站升级后进行。
+- 20260928 补录：登录增加账号健康检查及并发协调，确认账号被上游拒绝后自动停用，临时故障返回可重试提示；管理员启用账号时重新检查状态。补齐 Claude Web Skills 与账号级 Artifact/MCP 路由限制、响应凭据保护和新版原生 Frame 接口适配。该版本曾采用 Artifact 文件缓存，本次更新已改为原账号实时取源，不再启用文件缓存。
 - 20260729 适配 Claude Web 新版 Project 与对话接口，项目列表、详情、对话归属和删除状态会同步到本地；项目归档保持禁用。代理池自动分配现在只处理当前未填写代理的账号，已有代理绑定不会因健康检查、禁用或池配置变化被自动替换；手动填写的代理优先级最高，清空后账号会重新进入自动分配范围。新增 Claude Web Skills 只读透传和 MCP 写操作两个可选开关，默认保持关闭；同时修复 zstd 响应解压和资源预加载链接绕过反代的问题。升级时数据库字段与索引由服务启动过程自动补齐，无需手工执行 SQL。
 - 20260717 **重大安全更新**：账号 sessionkey 改为加密存储、安全性显著增强（数据库不再保留明文）；首次迁移与冷启动性能大幅优化（跳过大表全表扫描、清理过期软删除数据）；审计日志支持获取**真实客户端 IP**（智能兼容 Cloudflare 与国内自建反代）；新增《[外部系统安全对接 API 文档](./API.md)》；修复新增账号返回 `400 invalid sort parameters`、时间校验时间源失效等问题。**升级后请务必通过 API/后台写账号，勿直接写库。**
 - 20260520 新增 MCP 目录代理支持，拆分对话级路由处理
@@ -88,7 +90,8 @@ docker compose -f docker-compose-warp.yml logs --tail=200 ddclaude-share-server-
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CHATPROXY` | 空 | Claude Web 上游网关地址；配置后跳过代理池自动分配 |
+| `CHATPROXY` | 空 | Claude Web 上游网关地址，必须使用 HTTPS；配置后跳过代理池自动分配 |
+| `FRAME_PROXY_DOMAIN` | `frame.chatgpt.ng` | 原生 Claude Docs 隔离预览域名；未设置或为空时使用默认值，可用非空域名覆盖；不填协议、通配符、路径或端口 |
 | `LICENSE_CODE` | 空 | 服务授权码 |
 | `APIAUTH` | 空 | `/adminapi/*` 共享密钥；为空时管理 API 全部拒绝 |
 | `OAUTH_URL` | 本服务 `/oauth` | 第三方用户系统登录回调 |
@@ -100,6 +103,23 @@ docker compose -f docker-compose-warp.yml logs --tail=200 ddclaude-share-server-
 | `TRUST_PROXY_HEADERS` | `true` | 是否信任可信反代传入的真实客户端 IP；服务直连公网时建议设为 `false` |
 | `CLAUDE_WEB_SKILLS_READ_THROUGH` | `false` | 是否只读透传 Claude Web Skills 列表；默认返回 `{"skills":[]}` |
 | `CLAUDE_WEB_MCP_MUTATIONS` | `false` | 是否允许 Claude Web MCP 写操作；默认只开放已知只读接口 |
+
+## Artifact 预览、下载与跨账号历史
+
+- 跨账号指同一本站用户切换 Claude 账号/车位后查看自己拥有的对话，不开放其他本站用户的对话。服务使用稳定的 `accountId` 定位原账号，不通过尝试多个账号寻找可用凭据。
+- 对话正文优先向原账号读取；原账号不可用时可返回本站保存的聊天记录。Artifact 文件不保存本地内容副本，预览与下载均需要原账号及上游文件可用。已有旧缓存目录不会自动删除。
+- 发送消息、上传、编辑、重新生成和 Artifact 回写继续要求当前选择原账号。读取用途的转换令牌、PDF 转换及批量下载可使用 POST，仍按读取权限校验。
+- Office 文件沿用原生预览器，经 `/api/convert-pdf` 二进制转换；无需新增文档渲染器。新版静态资源路径使用 `artifact-live-v2`，应在更新镜像后刷新浏览器页面。
+
+## Claude Docs Frame 独立代理
+
+新版 Docs 使用 `<文档UUID>.frame.claudeusercontent.com` 的隔离 iframe。主站新版代码默认将它改写为 `<文档UUID>.frame.chatgpt.ng`，不需要每次 Claude 构建都修改压缩脚本。默认代理目前仅允许 `https://aa.claudechn.com`、`https://rainj.eu.cc` 嵌入；其他主站需先配置对应的精确父来源，或自建代理后覆盖 `FRAME_PROXY_DOMAIN`，否则会被浏览器嵌入策略拒绝。
+
+自建代理文件位于 [frame-proxy/](./frame-proxy/README.md)。在独立服务器/独立来源部署，不要把用户生成脚本放到登录主站的同源路径。运行前准备对应泛域名 DNS 和 TLS，设置 `FRAME_PARENT_ORIGINS` 为自己的主站来源，设置 `TLS_CERT`、`TLS_KEY` 为容器中的证书路径，再启动 `frame-proxy/compose.yaml`。它是独立 Compose 项目，不随主站 `deploy.sh` 自动启动。
+
+Cloudflare 免费 Universal SSL 的 `*.example.com` 不覆盖 `<UUID>.frame.example.com`。保留这一层域名时，可将泛域名记录设为“仅 DNS”，由源站使用公开泛域名证书；若使用橙云，需要额外配置覆盖 `*.frame.example.com` 的边缘证书。DNS Token、证书私钥和运行时 `.env` 不应提交到仓库。
+
+代理保留原生短期授权、专用 Cookie、CSP 和双向消息握手，文件流式传输且不缓存；主站仍负责原账号选取和对话归属校验。独立代理连通不代表原账号可用。当前已验证授权兑换、Cookie 读取和原生 iframe 握手；完整 Docs 内容、跨账号多标签页及全部格式仍需更新主站后实测。已观察到目标文档元数据重新获取返回 404，升级后需复核。
 
 ## 限速服务以及对话审核
 

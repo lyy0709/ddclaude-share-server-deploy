@@ -1,0 +1,34 @@
+services:
+  frame-proxy:
+    image: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+    container_name: claude-frame-proxy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 64
+    environment:
+      FRAME_PROXY_DOMAIN: ${FRAME_PROXY_DOMAIN:-frame.chatgpt.ng}
+      FRAME_PARENT_ORIGINS: ${FRAME_PARENT_ORIGINS:-https://aa.claudechn.com,https://rainj.eu.cc}
+      TLS_CERT: ${TLS_CERT:-}
+      TLS_KEY: ${TLS_KEY:-}
+    ports:
+      - '127.0.0.1:8401:8080'
+      - '443:8443'
+    volumes:
+      - ./server.mjs:/app/server.mjs:ro
+      - ./tls:/tls:ro
+    command: ['node', '/app/server.mjs']
+    logging:
+      driver: json-file
+      options:
+        max-size: '5m'
+        max-file: '2'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://127.0.0.1:8080/healthz',{headers:{host:'localhost'}},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

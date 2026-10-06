@@ -38,6 +38,8 @@ services:
       - 8300:8001
     environment:
       TZ: Asia/Shanghai # 指定时区
+      # 原生 Claude Docs 的独立预览域名；新版默认即为此值
+      FRAME_PROXY_DOMAIN: ${FRAME_PROXY_DOMAIN:-frame.chatgpt.ng}
       # Claude Web 网关地址；配置后代理池自动分配会跳过
       # CHATPROXY: "https://chatproxy.com"
       # 第三方用户系统登录回调
