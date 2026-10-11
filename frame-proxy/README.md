@@ -36,8 +36,8 @@ FRAME_PARENT_ORIGINS=https://aa.claudechn.com,https://rainj.eu.cc
   主站的 Cookie、sessionKey 或 Authorization。
 - 代理只处理 GET、HEAD、OPTIONS，不处理主站的账户、元数据、文档同步或编辑接口。
   原归属账号的选择和本站用户的对话权限继续由 Claude 主站后端校验。
-- 文件流式传输且不落盘、不缓存；为替换运行时允许来源，HTML 会短暂驻留内存。
-  单份 HTML 限制 16 MiB，同时最多处理两份；容器内存上限 256 MiB。
+- 文件流式传输且不落盘、不缓存；为替换运行时允许来源，HTML 和原生 Docs JavaScript 会短暂驻留内存。
+  单份文本限制 16 MiB，同时最多处理两份，其余响应暂停读取等待；容器内存上限 256 MiB。
 - 未获得有效授权时保留上游 403，不把错误页面伪装成成功。健康检查通过不等于
   某份文档有可用授权，也不等于主站的所有原生数据接口已经接通。
 
@@ -70,3 +70,17 @@ journalctl -u claude-frame-renew.service
   Claude Docs 页面或跨账号对话验收。aa 线上后端由站点维护方后续更新。
 - 当前 aa 文档元数据接口的重新请求返回 404；本次验证使用仍有效的原生链接。
   更新主站后仍需检查原账号实时取源、文档数据接口和跨账号只读策略。
+
+## 2026-10-11 原生 Docs 协议修复
+
+新版 Docs JavaScript 将 `__FRAME_PREAMBLE.origins` 与内置官方来源数组取交集。
+代理同时替换原生 `artifact-type/*.js` 中的官方来源数组，使用相同的精确父来源名单，
+不依赖脚本构建哈希或压缩变量名。被改写的模块不使用上游条件请求或 Range 响应。
+已在 aa 真实对话验证 `NO_SHELL_ORIGIN` 消失并进入 `lane:hello:early`。
+
+主站须同步更新：新增拥有者校验后的 `/api/frame/sync` WebSocket、
+`/api/frame/lane/{bongo,journal}/{id}/subscribe` 和 `/api/frame/doc/{id}/{replica,ops}`。
+同步授权由服务端通过原账号获取，跨账号只允许已识别的读取消息；写消息仍要求原账号。
+这些请求在独立 Frame 代理中不会转发。主站反向代理须支持 WebSocket Upgrade。
+本次未执行项目构建或项目测试；aa 主站更新前订阅仍返回 403、同步仍返回 404，
+完整正文和跨账号实测尚未完成。

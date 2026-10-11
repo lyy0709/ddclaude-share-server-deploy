@@ -16,8 +16,9 @@ const hopHeaders = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'p
 const requestHeaders = ['accept', 'accept-language',
   'range', 'if-range', 'if-none-match', 'if-modified-since', 'user-agent'];
 const agent = new https.Agent({ keepAlive: true, maxSockets: 64, maxTotalSockets: 64, maxFreeSockets: 8 });
-const maxHTML = 16 * 1024 * 1024;
-let activeHTML = 0;
+const maxText = 16 * 1024 * 1024;
+let activeText = 0;
+const pendingText = new Set();
 
 function csp(value) {
   const directives = (value || "default-src 'none'").split(';').map(s => s.trim()).filter(Boolean)
@@ -68,6 +69,10 @@ function serve(req, res) {
   }
   const headers = { host: upstreamHost, 'accept-encoding': 'identity' };
   for (const name of requestHeaders) if (req.headers[name]) headers[name] = req.headers[name];
+  const nativeModule = /^\/_f\/[^/]+\/artifact-type\/[^/?]+\.js(?:\?|$)/.test(req.url);
+  if (nativeModule) {
+    for (const name of ['range', 'if-range', 'if-none-match', 'if-modified-since']) delete headers[name];
+  }
   const cookies = (req.headers.cookie || '').split(';').map(s => s.trim())
     .filter(s => cookieName.test(s.split('=', 1)[0]));
   if (cookies.length) headers.cookie = cookies.join('; ');
@@ -103,31 +108,39 @@ function serve(req, res) {
       outgoing.location = ownOrigin + location.pathname + location.search + location.hash;
     }
     const isHTML = /^text\/html\b/i.test(response.headers['content-type'] || '') && req.method !== 'HEAD';
-    if (!isHTML) {
+    const isModule = nativeModule && /^(?:application|text)\/javascript\b/i.test(response.headers['content-type'] || '') && req.method !== 'HEAD';
+    if (!isHTML && !isModule) {
       res.writeHead(response.statusCode, outgoing);
       pipeline(response, res, () => {}); return;
     }
     // The native runtime reads its allowed parent origins from the preamble.
-    // Update that protocol field, not minified runtime symbols or user code.
-    if (activeHTML >= 2) { response.destroy(); fail(res, 503, 'Frame transport busy'); return; }
-    activeHTML++;
+    // Native Docs modules additionally intersect that field with an origin array.
+    // Rewrite the stable official-origin literals, independent of bundle names.
+    const consume = () => {
+    if (res.destroyed || response.destroyed) return;
+    activeText++;
     const chunks = []; let bytes = 0;
-    response.once('close', () => { activeHTML--; chunks.length = 0; });
+    response.once('close', () => {
+      activeText--; chunks.length = 0;
+      const next = pendingText.values().next().value;
+      if (next) { pendingText.delete(next); next(); }
+    });
     response.on('data', chunk => {
       bytes += chunk.length;
-      if (bytes > maxHTML) { response.destroy(); fail(res, 502, 'Frame HTML exceeds transport limit'); return; }
+      if (bytes > maxText) { response.destroy(); fail(res, 502, 'Frame text exceeds transport limit'); return; }
       chunks.push(chunk);
     });
     response.on('error', () => fail(res, 502, 'Frame response interrupted'));
     response.on('end', () => {
       if (res.destroyed || res.writableEnded) return;
       if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
-        fail(res, 502, 'Unexpected compressed Frame HTML'); return;
+        fail(res, 502, 'Unexpected compressed Frame text'); return;
       }
       let body = Buffer.concat(chunks).toString('utf8');
       chunks.length = 0;
       try {
-        body = body.replace(/(window\.__FRAME_PREAMBLE\s*=\s*)(\{[^<]*?\})(\s*<\/script>)/,
+        if (isModule) body = body.replace(/\[(?:["'`]https:\/\/(?:claude\.ai|preview\.claude\.ai|ion-preview\.claude\.ai|claude-ai\.staging\.ant\.dev)["'`](?:,\s*)?)+\]/g, JSON.stringify(parents));
+        if (isHTML) body = body.replace(/(window\.__FRAME_PREAMBLE\s*=\s*)(\{[^<]*?\})(\s*<\/script>)/,
           (match, prefix, json, suffix) => {
             const preamble = JSON.parse(json); preamble.origins = parents;
             return prefix + JSON.stringify(preamble).replaceAll('<', '\\u003c') + suffix;
@@ -140,7 +153,13 @@ function serve(req, res) {
       outgoing['content-length'] = data.length;
       res.writeHead(response.statusCode, outgoing); res.end(data);
     });
+    response.resume();
+    };
     res.once('close', () => { if (!res.writableFinished) response.destroy(); });
+    if (activeText >= 2) {
+      response.pause(); pendingText.add(consume);
+      response.once('close', () => pendingText.delete(consume));
+    } else consume();
   });
   upstream.on('timeout', () => upstream.destroy(new Error('timeout')));
   upstream.on('error', () => fail(res, 502, 'Frame upstream unavailable'));
