@@ -84,3 +84,50 @@ journalctl -u claude-frame-renew.service
 这些请求在独立 Frame 代理中不会转发。主站反向代理须支持 WebSocket Upgrade。
 本次未执行项目构建或项目测试；aa 主站更新前订阅仍返回 403、同步仍返回 404，
 完整正文和跨账号实测尚未完成。
+
+## Nginx 主站 WebSocket 转发
+
+`/api/frame/sync` 需要 WebSocket。若现有反代到 Claude 项目的 `location /` 或
+`location /api/` 已支持 WebSocket，无需新增专用 location；否则在实际匹配该请求的
+location 中加入以下配置（已有同名指令时修改原行），保持原有 `proxy_pass`、鉴权、
+Cookie、Host 和转发协议配置不变：
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
+这三行是 Nginx 官方给出的基本 WebSocket 转发方式。对于共用 HTTP 与 WebSocket 的
+location，推荐在 `http` 块（不放在 `server` 或 `location` 内）定义：
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+```
+
+然后将实际 location 中的 Connection 指令改为：
+
+```nginx
+proxy_set_header Connection $connection_upgrade;
+```
+
+不要依赖 `Connection $http_connection` 原样传递上一层的 hop-by-hop 连接头。
+若现有配置已经包含 HTTP/1.1 和 Upgrade，不能仅凭旧版的统一 403 断言缺少
+WebSocket 配置；需确认实际匹配的 location、配置是否重载，以及项目入口前是否还有
+HTTP 代理。
+若文档连接在空闲 60 秒后断开，可在同一 location 设置
+`proxy_read_timeout 1800s;`，与后端现有最长连接时间保持一致。
+修改完成后执行 `nginx -t && nginx -s reload`，刷新对话并检查 `/api/frame/sync`
+的握手是否返回 `101 Switching Protocols`。不要用删除来源或归属检查来代替转发配置。
+参考：https://nginx.org/en/docs/http/websocket.html
+
+2026-10-16 已观察到 aa 浏览器正确发送 Origin、Upgrade 和 `frame-sync.v1`，
+主站元数据与订阅接口返回 200，但同步握手仍返回 403。当前旧报错将三项检查混为一谈，
+用户随后提供的配置已包含 HTTP/1.1 和 Upgrade，但使用 `Connection $http_connection`；
+尚未确认实际加载的配置及后端收到的头，不能仅凭此响应确定哪项校验失败。
+新版后端分别返回 `origin_mismatch`（403）、`upgrade_required`（426）和
+`protocol_required`（400），同时提供 `X-Frame-Sync-Error` 响应头，便于确认具体环节。
+日志只记录原因码，不记录 Cookie、授权子协议值或完整握手头。
